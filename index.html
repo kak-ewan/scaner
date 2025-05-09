@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanner Lembar Jawaban</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px dashed #ccc;
+            border-radius: 5px;
+        }
+        .btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        .btn:hover {
+            background-color: #45a049;
+        }
+        .btn-secondary {
+            background-color: #008CBA;
+        }
+        .btn-secondary:hover {
+            background-color: #0077a3;
+        }
+        video {
+            width: 100%;
+            max-width: 500px;
+            background-color: #000;
+            margin-bottom: 10px;
+            display: none;
+        }
+        canvas {
+            max-width: 100%;
+            display: block;
+            margin: 20px auto;
+            border: 1px solid #ddd;
+        }
+        .result-container {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .loading-spinner {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .instructions {
+            background-color: #e7f4ff;
+            padding: 15px;
+            border-left: 4px solid #2196F3;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        .answer-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .answer-item {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .selected-answer {
+            background-color: #4CAF50;
+            color: white;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Scanner Lembar Jawaban Pilihan Ganda</h1>
+        
+        <div class="instructions">
+            <h3>Cara Penggunaan:</h3>
+            <ol>
+                <li>Ambil gambar lembar jawaban menggunakan kamera atau unggah file</li>
+                <li>Sistem akan otomatis mendeteksi nomor soal dan pilihan jawaban</li>
+                <li>Hasil deteksi akan ditampilkan dalam bentuk grid</li>
+                <li>Jawaban yang terdeteksi akan ditandai dengan warna hijau</li>
+            </ol>
+        </div>
+        
+        <div class="section">
+            <h2>Ambil Gambar</h2>
+            <video id="video" autoplay playsinline></video>
+            <div>
+                <button id="startBtn" class="btn">Mulai Kamera</button>
+                <button id="captureBtn" class="btn btn-secondary" disabled>Ambil Foto</button>
+                <button id="stopBtn" class="btn" disabled>Hentikan Kamera</button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Atau Unggah Gambar</h2>
+            <input type="file" id="fileInput" accept="image/*" class="btn">
+        </div>
+        
+        <div class="loading" id="loading">
+            <div class="loading-spinner"></div>
+            <p>Sedang memproses gambar...</p>
+        </div>
+        
+        <canvas id="canvas"></canvas>
+        <canvas id="tempCanvas" style="display:none;"></canvas>
+        
+        <div class="result-container" id="results" style="display:none;">
+            <h2>Hasil Deteksi</h2>
+            <div class="answer-grid" id="answerGrid"></div>
+        </div>
+    </div>
+
+    <script>
+        // Elemen DOM
+        const video = document.getElementById('video');
+        const startBtn = document.getElementById('startBtn');
+        const captureBtn = document.getElementById('captureBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const fileInput = document.getElementById('fileInput');
+        const canvas = document.getElementById('canvas');
+        const tempCanvas = document.getElementById('tempCanvas');
+        const ctx = canvas.getContext('2d');
+        const tempCtx = tempCanvas.getContext('2d');
+        const loading = document.getElementById('loading');
+        const results = document.getElementById('results');
+        const answerGrid = document.getElementById('answerGrid');
+        
+        let stream = null;
+        
+        // Mulai kamera
+        startBtn.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                });
+                video.srcObject = stream;
+                video.style.display = 'block';
+                startBtn.disabled = true;
+                captureBtn.disabled = false;
+                stopBtn.disabled = false;
+            } catch (err) {
+                console.error("Error accessing camera: ", err);
+                alert("Tidak dapat mengakses kamera. Pastikan Anda memberikan izin.");
+            }
+        });
+        
+        // Hentikan kamera
+        stopBtn.addEventListener('click', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                video.style.display = 'none';
+                startBtn.disabled = false;
+                captureBtn.disabled = true;
+                stopBtn.disabled = true;
+            }
+        });
+        
+        // Ambil foto dari kamera
+        captureBtn.addEventListener('click', () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            processImage();
+        });
+        
+        // Unggah gambar
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        ctx.drawImage(img, 0, 0);
+                        processImage();
+                    };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(e.target.files[0]);
+            }
+        });
+        
+        // Proses gambar
+        function processImage() {
+            loading.style.display = 'block';
+            results.style.display = 'none';
+            
+            // Simulasikan proses deteksi (2 detik)
+            setTimeout(() => {
+                detectAnswers();
+                loading.style.display = 'none';
+                results.style.display = 'block';
+            }, 2000);
+        }
+        
+        // Simulasi deteksi jawaban
+        function detectAnswers() {
+            // Kosongkan grid jawaban
+            answerGrid.innerHTML = '';
+            
+            // Header grid
+            const header1 = document.createElement('div');
+            header1.className = 'answer-item';
+            header1.textContent = 'Soal';
+            answerGrid.appendChild(header1);
+            
+            const header2 = document.createElement('div');
+            header2.className = 'answer-item';
+            header2.textContent = 'A';
+            answerGrid.appendChild(header2);
+            
+            const header3 = document.createElement('div');
+            header3.className = 'answer-item';
+            header3.textContent = 'B';
+            answerGrid.appendChild(header3);
+            
+            const header4 = document.createElement('div');
+            header4.className = 'answer-item';
+            header4.textContent = 'C';
+            answerGrid.appendChild(header4);
+            
+            const header5 = document.createElement('div');
+            header5.className = 'answer-item';
+            header5.textContent = 'D';
+            answerGrid.appendChild(header5);
+            
+            // Buat 20 soal
+            for (let i = 1; i <= 20; i++) {
+                // Nomor soal
+                const questionNum = document.createElement('div');
+                questionNum.className = 'answer-item';
+                questionNum.textContent = i;
+                answerGrid.appendChild(questionNum);
+                
+                // Opsi jawaban (A-D)
+                const options = ['A', 'B', 'C', 'D'];
+                // Pilih jawaban acak untuk simulasi
+                const selectedOption = Math.random() > 0.2 ? 
+                    options[Math.floor(Math.random() * options.length)] : null;
+                
+                for (const option of options) {
+                    const answerItem = document.createElement('div');
+                    answerItem.className = 'answer-item';
+                    answerItem.textContent = option;
+                    
+                    if (option === selectedOption) {
+                        answerItem.classList.add('selected-answer');
+                    }
+                    
+                    answerGrid.appendChild(answerItem);
+                }
+            }
+            
+            // Gambar kotak deteksi pada gambar (simulasi)
+            drawDetectionBoxes();
+        }
+        
+        // Gambar kotak deteksi pada canvas
+        function drawDetectionBoxes() {
+            // Gambar ulang gambar asli
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            tempCtx.drawImage(canvas, 0, 0);
+            
+            // Gambar kotak deteksi (simulasi)
+            ctx.strokeStyle = '#FF0000';
+            ctx.lineWidth = 2;
+            
+            // Area soal
+            const questionAreaWidth = canvas.width * 0.6;
+            const questionAreaHeight = canvas.height * 0.8;
+            const startX = canvas.width * 0.2;
+            const startY = canvas.height * 0.1;
+            
+            // Gambar area utama
+            ctx.strokeRect(startX, startY, questionAreaWidth, questionAreaHeight);
+            
+            // Gambar kotak untuk setiap soal
+            const questionHeight = questionAreaHeight / 20;
+            
+            for (let i = 0; i < 20; i++) {
+                const y = startY + (i * questionHeight);
+                
+                // Kotak nomor soal
+                ctx.strokeRect(startX - 50, y + 10, 40, questionHeight - 20);
+                
+                // Kotak opsi jawaban
+                for (let j = 0; j < 4; j++) {
+                    const x = startX + (j * 50);
+                    ctx.strokeRect(x, y + 10, 40, questionHeight - 20);
+                    
+                    // Gambar lingkaran untuk jawaban terpilih (acak untuk simulasi)
+                    if (Math.random() > 0.7) {
+                        ctx.beginPath();
+                        ctx.arc(x + 20, y + questionHeight/2, 15, 0, 2 * Math.PI);
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
